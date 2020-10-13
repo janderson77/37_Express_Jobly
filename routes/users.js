@@ -48,8 +48,7 @@ router.post('/login', async(req, res, next) => {
         if(user){
             let payload = {username: user.username, is_admin: user.is_admin}
             let token = jwt.sign(payload, SECRET_KEY)
-            let decoded = jwt.decode(token).is_admin
-            return res.json({message: "Logged In!", token, decoded: decoded})
+            return res.json({message: "Logged In!", token})
         }
         throw new ExpressError("Invalid username/password", 400)
     } catch (e) {
@@ -66,7 +65,7 @@ router.get('/', async (req, res, next) => {
     }
 })
 
-router.get('/:username', authenticateJWT, async  (req, res, next) => { 
+router.get('/:username', async  (req, res, next) => { 
     try {
         const u = await User.getOneUser(req.params.username)
         return res.json({user: u})

@@ -1,8 +1,18 @@
 process.env.NODE_ENV = 'test';
+const { token } = require('morgan');
 const request = require('supertest');
 const app = require('../../app');
 const db = require("../../db")
 const User = require("../../models/user")
+
+let testAdmin = {
+        username: "admin",
+        password: "admin",
+        first_name: "admin",
+        last_name: "admin",
+        email: "admin@test.com",
+        photo_url: "http://test.com/testimage"
+    }
 
 let testUser = {
     username: "test",
@@ -22,8 +32,17 @@ let testUser2 = {
     photo_url: "http://test2.com/testimage2"
 }
 
+beforeAll(async()=>{
+    await request(app).post('/users').send(testAdmin)
+    await db.query(`UPDATE users SET is_admin=true WHERE username = 'admin'`)
+    const a = await request(app).post(`/users/login`).send({username: testAdmin.username, password: testAdmin.password})
+    testAdmin.token = a.body.token
+    
+})
+
 beforeEach(async()=> {
-    await User.createUser(testUser)
+    const u = await request(app).post('/users').send(testUser)
+    testUser.token = u.body.user.token
 })
 
 describe('POST /users', () => {
@@ -46,9 +65,6 @@ describe('POST /users', () => {
 
         expect(res.statusCode).toBe(201)
     })
-
-
-    
 
     test('should not create a user with missing username or email', async() => {
         const res = await request(app).post('/users').send(
@@ -152,7 +168,7 @@ describe('GET /users', () => {
         const res = await request(app).get('/users')
 
         expect(res.statusCode).toBe(200)
-        expect(res.body).toEqual({"users": [{"username": "test","first_name": "test",
+        expect(res.body).toEqual({"users": [{"username": "admin", "first_name": "admin", "last_name": "admin", "email": "admin@test.com"},{"username": "test","first_name": "test",
         "last_name": "test",
         "email": "test@test.com",}]})
     })
@@ -184,10 +200,10 @@ describe('GET /users/:username', () => {
 })
 
 describe('PATCH /users/:username', () => {
-    test('should update only the username', async () => {
+    test('should update only the username for the given user', async () => {
         const res = await request(app).patch(`/users/${testUser.username}`).send({
             username: "robert"
-        })
+        }).set({_token:testUser.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body.user).toEqual(
@@ -202,10 +218,10 @@ describe('PATCH /users/:username', () => {
         )
     })
 
-    test('should update only the first_name', async () => {
+    test('should update only the first_name for the given user', async () => {
         const res = await request(app).patch(`/users/${testUser.username}`).send({
             first_name: "robert"
-        })
+        }).set({_token:testUser.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body.user).toEqual(
@@ -223,18 +239,29 @@ describe('PATCH /users/:username', () => {
 })
 
 describe('DELETE /users/:username', () => {
-    test('should delete a single user', async () => {
-        const res = await request(app).delete(`/users/${testUser.username}`)
+    test('should delete a single logged in user', async () => {
+        const res = await request(app).delete(`/users/${testUser.username}`).set({_token:testUser.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body.message).toEqual("User Deleted")
     })
 
-    test('should return 404 for invalid username', async () => {
-        const res = await request(app).delete(`/users/bobert`)
+    test('should return 404 if username matches but is already deleted', async () => {
+        await db.query(`DELETE FROM users WHERE username = $1`,[testUser.username])
+        const res = await request(app).delete(`/users/${testUser.username}`).set({_token:testUser.token})
 
         expect(res.statusCode).toBe(404)
+        
     })
+
+    test('should return unauthorized for invalid username', async () => {
+        const res = await request(app).delete(`/users/bobert`).set({_token:testUser.token})
+
+        expect(res.statusCode).toBe(401)
+    })
+
+    
+    
     
     
 })
@@ -245,9 +272,10 @@ describe('DELETE /users/:username', () => {
 
 
 afterEach(async () => {
-    await db.query(`DELETE FROM users`)
+    await db.query(`DELETE FROM users WHERE username != 'admin'`)
 })
 
 afterAll(async () => {
+    await db.query(`DELETE FROM users`)
 	await db.end();
 });

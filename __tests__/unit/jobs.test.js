@@ -38,6 +38,34 @@ let job3 = {
     company_handle: "comp"
 }
 
+let testAdmin = {
+    username: "admin",
+    password: "admin",
+    first_name: "admin",
+    last_name: "admin",
+    email: "admin@test.com",
+    photo_url: "http://test.com/testimage"
+}
+
+let testUser = {
+    username: "test",
+    password: "test",
+    first_name: "test",
+    last_name: "test",
+    email: "test@test.com",
+    photo_url: "http://test.com/testimage"
+}
+
+beforeAll(async()=>{
+    await request(app).post('/users').send(testAdmin)
+    await db.query(`UPDATE users SET is_admin=true WHERE username = 'admin'`)
+    const a = await request(app).post(`/users/login`).send({username: testAdmin.username, password: testAdmin.password})
+    testAdmin.token = a.body.token
+
+    const u = await request(app).post('/users').send(testUser)
+    testUser.token = u.body.user.token
+    
+})
 
 
 beforeEach(async () => {
@@ -52,8 +80,8 @@ beforeEach(async () => {
 })
 
 describe('GET /jobs', () => {
-    test('Gets full list of jobs', async () => {
-        const res = await request(app).get('/jobs')
+    test('Gets full list of jobs for logged in user', async () => {
+        const res = await request(app).get('/jobs').set({_token: testUser.token})
 
         expect(res.statusCode).toBe(200);
         expect(res.body).toEqual({jobs: [{"title": "Test Job", "company_handle": "comp"}, {"title": "Test Job 2", "company_handle": "comp"}]})
@@ -61,23 +89,23 @@ describe('GET /jobs', () => {
 })
 
 describe('GET /jobs/:id', ()=>{
-    test('Gets one job by id', async()=> {
-        const res = await request(app).get(`/jobs/1`)
+    test('Gets one job by id for logged in user', async()=> {
+        const res = await request(app).get(`/jobs/1`).set({_token: testUser.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body).toEqual({job: job1})
     })
 
     test('Returns 404 for invalid job id', async ()=>{
-        const res = await request(app).get(`/jobs/0`)
+        const res = await request(app).get(`/jobs/0`).set({_token: testUser.token})
 
         expect(res.statusCode).toBe(404)
     })
 })
 
 describe('POST /jobs', ()=>{
-    test('Creates a single company', async()=>{
-        const res = await request(app).post('/jobs').send(job3)
+    test('Creates a single company for logged in admin', async()=>{
+        const res = await request(app).post('/jobs').send(job3).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(201)
         expect(res.body.job).toHaveProperty('id')
@@ -92,7 +120,7 @@ describe('POST /jobs', ()=>{
                 salary: 50000,
                 company_handle: "comp"
             }
-        )
+        ).set({_token: testAdmin.token})
         expect(res.statusCode).toBe(201)
     })
 
@@ -103,7 +131,7 @@ describe('POST /jobs', ()=>{
                 equity: 0.1,
                 company_handle: "comp"
             }
-        )
+        ).set({_token: testAdmin.token})
         expect(res.statusCode).toBe(400)
     })
 
@@ -114,7 +142,7 @@ describe('POST /jobs', ()=>{
                 equity: 0.1,
                 company_handle: "comp"
             }
-        )
+        ).set({_token: testAdmin.token})
         expect(res.statusCode).toBe(400)
     })
 
@@ -125,7 +153,7 @@ describe('POST /jobs', ()=>{
                 salary: 50000,
                 equity: 0.1
             }
-        )
+        ).set({_token: testAdmin.token})
         expect(res.statusCode).toBe(400)
     })
 
@@ -137,17 +165,17 @@ describe('POST /jobs', ()=>{
                 equity: 0.1,
                 company_handle: "stfu"
             }
-        )
+        ).set({_token: testAdmin.token})
         expect(res.statusCode).toBe(500)
     })
     
 })
 
 describe('PATCH /jobs/:id', () => {
-    test('Should update only job title', async () => {
+    test('Should update only job title for logged in admin', async () => {
         const res = await request(app).patch('/jobs/1').send(
             {"title": "This is the new title"}
-        )
+        ).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body.job.title).toEqual("This is the new title")
@@ -156,10 +184,10 @@ describe('PATCH /jobs/:id', () => {
         expect(res.body.job.company_handle).toEqual(job1.company_handle)
     })
 
-    test('Should update only job salary', async () => {
+    test('Should update only job salary for logged in admin', async () => {
         const res = await request(app).patch('/jobs/1').send(
             {"salary": 80000}
-        )
+        ).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(200)
         expect(res.body.job.title).toEqual(job1.title)
@@ -169,19 +197,19 @@ describe('PATCH /jobs/:id', () => {
     })
 
     test('should not update salary if not type integer', async () => {
-        const res = await request(app).patch('/jobs/1').send({"salary": "Fifty Thousand Per Year"})
+        const res = await request(app).patch('/jobs/1').send({"salary": "Fifty Thousand Per Year"}).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(400)
     })
 
     test('should not update equity if not type integer', async () => {
-        const res = await request(app).patch('/jobs/1').send({"equity": "One percent"})
+        const res = await request(app).patch('/jobs/1').send({"equity": "One percent"}).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(400)
     })
 
     test('should not update company_handle if invalid', async () => {
-        const res = await request(app).patch('/jobs/1').send({"company_handle": "fail"})
+        const res = await request(app).patch('/jobs/1').send({"company_handle": "fail"}).set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(500)
     })
@@ -190,14 +218,14 @@ describe('PATCH /jobs/:id', () => {
 })
 
 describe('DELETE /jobs/:id', () => {
-    test('should delete a single job', async () => {
-        const res = await request(app).delete('/jobs/1')
+    test('should delete a single job for logged in admin', async () => {
+        const res = await request(app).delete('/jobs/1').set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(200)
     })
 
-    test('should return 404 for invalid id', async () => {
-        const res = await request(app).delete('/jobs/0')
+    test('should return 404 for invalid id for logged in admin', async () => {
+        const res = await request(app).delete('/jobs/0').set({_token: testAdmin.token})
 
         expect(res.statusCode).toBe(404)
     })
@@ -213,5 +241,6 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
+    await db.query(`DELETE FROM users`)
 	await db.end();
 });
